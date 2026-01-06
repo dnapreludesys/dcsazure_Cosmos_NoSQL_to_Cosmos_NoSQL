@@ -45,7 +45,7 @@
                         "typeProperties": {
                             "functionName": "Cosmos_to_ADLS",
                             "body": {
-                                "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_key\": \"@{json(string(pipeline().parameters.P_COSMOS_SOURCE_KEY)).value}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_account_key\": \"@{json(string(pipeline().parameters.P_ADLS_KEY)).value}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\"\n}",
+                                "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_key\": \"@{json(string(pipeline().parameters.P_COSMOS_SOURCE_KEY)).value}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_account_key\": \"@{json(string(pipeline().parameters.P_ADLS_KEY)).value}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"batch_size\" : @{variables('COSMOS_TO_ADLS_BATCH_SIZE')}\n}",
                                 "type": "Expression"
                             },
                             "headers": {},
@@ -556,13 +556,17 @@
                     "MAX_LEVELS_TO_RECURSE": {
                         "type": "Integer",
                         "defaultValue": 10
+                    },
+                    "COSMOS_TO_ADLS_BATCH_SIZE": {
+                        "type": "Integer",
+                        "defaultValue": 1000
                     }
                 },
                 "folder": {
                     "name": "dcsazure_Cosmos_NoSQL_to_Cosmos_NoSQL"
                 },
                 "annotations": [],
-                "lastPublishTime": "2025-12-22T13:17:26Z"
+                "lastPublishTime": "2026-01-02T10:27:28Z"
             },
             "dependsOn": [
                 "[concat(variables('factoryId'), '/pipelines/dcsazure_Cosmos_NoSQL_ADLS_delimited_discovery_pl')]"
