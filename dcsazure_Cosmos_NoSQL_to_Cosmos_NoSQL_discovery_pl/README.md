@@ -4,10 +4,12 @@
 This pipeline will perform automated sensitive data discovery on your Azure Cosmos DB (NoSQL API) containers.
 
 ### Prerequisites
-1. Configure the hosted metadata database and associated Azure SQL service.
-2. Configure the DCS for Azure REST service.
-3. Configure an Azure Function for exporting Cosmos DB data to Azure Data Lake Storage (ADLS).
-4. Configure an Azure Data Lake Storage Gen2 account for staging exported Cosmos DB data.
+
+1. Configure the hosted metadata database and associated Azure SQL service (version `V2025.01.15.0`).
+1. Configure the DCS for Azure REST service.
+1. Configure the Azure Data Lake Storage (Gen 2) service for staging exported Cosmos DB data.
+1. [Assign a managed identity with a storage blob data contributor role for the Data Factory instance within the storage account](https://help.delphix.com/dcs/current/Content/DCSDocs/Configure_ADLS_delimited_pipelines.htm).
+1. Configure an Azure Function for exporting Cosmos DB data to Azure Data Lake Storage (ADLS).
 
 ### Importing
 There are several linked services that will need to be selected in order to perform the profiling and data discovery of your Cosmos NoSQL containers.
