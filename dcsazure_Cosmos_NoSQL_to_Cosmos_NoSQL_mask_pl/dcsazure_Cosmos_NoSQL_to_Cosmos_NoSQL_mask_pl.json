@@ -247,7 +247,7 @@
                                     "type": "Fail",
                                     "dependsOn": [
                                         {
-                                            "activity": "Update Masked State Failed",
+                                            "activity": "Update Copy ADLS Data to Cosmos State Fail",
                                             "dependencyConditions": [
                                                 "Succeeded"
                                             ]
@@ -266,7 +266,7 @@
                                     }
                                 },
                                 {
-                                    "name": "Update Masked State Failed",
+                                    "name": "Update Copy ADLS Data to Cosmos State Fail",
                                     "type": "SqlServerStoredProcedure",
                                     "dependsOn": [],
                                     "policy": {
@@ -423,7 +423,7 @@
                         }
                     },
                     {
-                        "name": "Update Masked State No Filter",
+                        "name": "Update Copy ADLS Data to Cosmos State",
                         "type": "SqlServerStoredProcedure",
                         "dependsOn": [
                             {
@@ -665,7 +665,7 @@
                     },
                     "METADATA_MASKING_PARAMS_PROCEDURE_NAME": {
                         "type": "String",
-                        "defaultValue": "generate_cosmos_no_sql_masking_parameters"
+                        "defaultValue": "generate_masking_parameters"
                     },
                     "COLUMN_WIDTH_ESTIMATE": {
                         "type": "String",
@@ -687,7 +687,7 @@
                     "name": "dcsazure_Cosmos_NoSQL_to_Cosmos_NoSQL"
                 },
                 "annotations": [],
-                "lastPublishTime": "2026-01-13T13:54:28Z"
+                "lastPublishTime": "2026-01-22T14:45:37Z"
             },
             "dependsOn": [
                 "[concat(variables('factoryId'), '/pipelines/dcsazure_Cosmos_NoSQL_ADLS_delimited_mask_pl')]"

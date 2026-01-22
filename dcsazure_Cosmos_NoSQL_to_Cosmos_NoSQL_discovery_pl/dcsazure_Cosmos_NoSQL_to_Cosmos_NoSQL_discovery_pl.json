@@ -275,7 +275,7 @@
                         }
                     },
                     {
-                        "name": "Update Discovery State",
+                        "name": "Update Copy Cosmos Data to ADLS State",
                         "type": "SqlServerStoredProcedure",
                         "dependsOn": [
                             {
@@ -389,7 +389,7 @@
                         }
                     },
                     {
-                        "name": "Update Discovery State Failed",
+                        "name": "Update Copy Cosmos Data to ADLS State Failed",
                         "type": "SqlServerStoredProcedure",
                         "dependsOn": [
                             {

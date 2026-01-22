@@ -9,7 +9,7 @@ This pipeline will perform automated sensitive data discovery on your Azure Cosm
 1. Configure the DCS for Azure REST service.
 1. Configure the Azure Data Lake Storage (Gen 2) service for staging exported Cosmos DB data.
 1. [Assign a managed identity with a storage blob data contributor role for the Data Factory instance within the storage account](https://help.delphix.com/dcs/current/Content/DCSDocs/Configure_ADLS_delimited_pipelines.htm).
-1. Configure an Azure Function for exporting Cosmos DB data to Azure Data Lake Storage (ADLS).
+1. [Configure an Azure Function for exporting Cosmos DB data to Azure Data Lake Storage (ADLS)](External_Document_URL) (version `Cosmos_to_ADLS_V1`).
 
 ### Importing
 There are several linked services that will need to be selected in order to perform the profiling and data discovery of your Cosmos NoSQL containers.
@@ -17,21 +17,23 @@ There are several linked services that will need to be selected in order to perf
 These linked service types are needed for the following steps:
 
 `Azure Function` (Cosmos to ADLS) - Linked service associated with exporting Cosmos DB data to ADLS. This will be used for the following steps:
-* Cosmos to ADLS (Azure Function activity)
+* Copy Cosmos Data to ADLS (Azure Function activity)
 
 `Azure Data Lake Storage Gen2` (staging) - Linked service associated with the ADLS account used for staging Cosmos DB exports. This will be used for the following steps:
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_container_and_directory_discovery_ds (DelimitedText dataset)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_data_discovery_df/SourceData1MillRowDataSampling (dataFlow)
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_container_and_directory_discovery_ds (DelimitedText dataset),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_data_discovery_df/SourceData1MillRowDataSampling (dataFlow),
 * dcsazure_Cosmos_NoSQL_ADLS_delimited_header_file_schema_discovery_ds (DelimitedText dataset)
 
 `Azure SQL` (metadata) - Linked service associated with your hosted metadata store. This will be used for the following steps:
-* Set Source Metadata (Script activity)
-* Update Discovery State (Stored procedure activity)
-* Update Discovery State Failed (Stored procedure activity)
-* Check If We Should Rediscover Data (If Condition activity)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_metadata_discovery_ds (Azure SQL Database dataset)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_data_discovery_df/MetadataStoreRead (dataFlow)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_data_discovery_df/WriteToMetadataStore (dataFlow)
+* Set Source Metadata (Script activity),
+* Update Copy Cosmos Data to ADLS State (Stored procedure activity),
+* Update Copy Cosmos Data to ADLS State Failed (Stored procedure activity),
+* Update Discovery State (Stored procedure activity),
+* Update Discovery State Failed (Stored procedure activity),
+* Check If We Should Rediscover Data (If Condition activity),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_metadata_discovery_ds (Azure SQL Database dataset),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_data_discovery_df/MetadataStoreRead (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_data_discovery_df/WriteToMetadataStore (dataFlow),
 * Persist Metadata To Database (Stored procedure activity)
 
 `REST` (DCS for Azure) - Linked service associated with calling DCS for Azure. This will be used for the following steps:
@@ -39,7 +41,7 @@ These linked service types are needed for the following steps:
 
 ### How It Works
 
-* Cosmos to ADLS
+* Copy Cosmos Data to ADLS
   * Export documents from a Cosmos DB container to ADLS using an Azure Function
 * Until Cosmos to ADLS Durable Function is Success
   * Poll the Azure Function execution status until the export completes
@@ -74,6 +76,8 @@ If you have configured your database using the metadata store scripts, these var
 * `COLUMNS_FROM_ADLS_FILE_STRUCTURE_PROCEDURE_NAME` - Stored procedure used to infer columns from delimited files (default `get_columns_from_delimited_file_structure_sp`)
 * `STORAGE_ACCOUNT` - Azure Data Lake Storage account name
 * `MAX_LEVELS_TO_RECURSE` - Maximum directory recursion depth (default `10`)
+* `COSMOS_TO_ADLS_BATCH_SIZE` - This is the number of rows per batch while copying the data from Cosmos NoSQL database to ADLS (default `50000`)
+* `AZURE_FUNCTION_STATUS_INTERVAL` - Number of seconds to wait before checking the status of `Copy Cosmos Data to ADLS` Azure Function activity(default `30`)
 
 ### Parameters
 
@@ -87,3 +91,30 @@ If you have configured your database using the metadata store scripts, these var
 * `P_ADLS_CONTAINER_NAME` - String - Azure Data Lake Storage filesystem / container name
 * `P_ADLS_KEY` - SecureString - Azure Data Lake Storage access key
 * `P_REDISCOVER` - Bool - Specifies if previously discovered data should be rediscovered (default `true`)
+
+### Notes
+
+* When creating the Azure Function used for Cosmos DB export, choose the hosting plan based on data volume:
+  * The default timeout for the Consumption plan is 10 minutes.
+  * The default timeout for the Flex Consumption plan is 60 minutes.
+  * For containers with millions of documents, it is recommended to use an App Service plan with at least 4 GB of memory.
+    * This allows the function to run without time limits until all records are processed.
+    * This approach is especially recommended when the target container has low RU provisioning or a very large number of records.
+* If the Azure Function fails with out-of-memory errors (exit code 137), adjust the `COSMOS_TO_ADLS_BATCH_SIZE` to reduce memory pressure.
+* To filter records by Cosmos DB partition, both `P_LOGICAL_PARTITION_KEY` and `P_LOGICAL_PARTITION_ID` must be provided.
+* This pipeline operates at the container level. When an array of `P_LOGICAL_PARTITION_ID` is specified, only data for those partitions is exported to ADLS and included in discovery and masking.
+* The `source_metadata` column in the `discovered_ruleset` table can be used to identify which partition data is currently staged in ADLS prior to running the masking pipeline. For example:
+  ```sql
+  SELECT
+      d.dataset,
+      d.specified_database,
+      d.specified_schema,
+      d.identified_table,
+      d.identified_column,
+      pv.value AS partition_value
+  FROM discovered_ruleset d
+  CROSS APPLY OPENJSON(d.source_metadata, '$.partition_values') pv
+  WHERE d.dataset = 'COSMOS_NOSQL'
+    AND d.specified_schema LIKE 'COSMOS-DATABASE/COSMOS-CONTAINER-NAME%';
+* If the pipeline is rerun for the same container with a different set of `P_LOGICAL_PARTITION_ID`, the data in ADLS is overwritten with the new partition’s data, and the corresponding partition metadata in the ruleset is updated.
+* Historical information about previously discovered partitions can be obtained from the `adf_events` log table.

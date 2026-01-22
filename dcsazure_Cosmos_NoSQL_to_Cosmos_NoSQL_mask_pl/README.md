@@ -5,10 +5,11 @@ This pipeline will perform masking of your Azure Cosmos DB (NoSQL API) data.
 
 ### Prerequisites
 
-1. Configure the hosted metadata database and associated Azure SQL service (version `V2025.01.30.0`+).
-2. Configure the DCS for Azure REST service.
-3. Configure an Azure Function for exporting Cosmos DB data to Azure Data Lake Storage (ADLS).
-4. Configure an Azure Data Lake Storage Gen2 account for staging Cosmos DB data during masking.
+1. Configure the hosted metadata database and associated Azure SQL service (version `V2025.01.15.0`).
+1. Configure the DCS for Azure REST service.
+1. Configure the Azure Data Lake Storage (Gen 2) service for staging masked data.
+1. [Assign a managed identity with a storage blob data contributor role for the Data Factory instance within the storage account](https://help.delphix.com/dcs/current/Content/DCSDocs/Configure_ADLS_delimited_pipelines.htm).
+1. [Configure an Azure Function for exporting masked data from Azure Data Lake Storage(ADLS) data to Cosmos DB](External_Document_URL) (version `Cosmos_to_ADLS_V1`).
 
 ### Importing
 There are several linked services that will need to be selected in order to perform the masking of your Cosmos NoSQL data.
@@ -16,34 +17,38 @@ There are several linked services that will need to be selected in order to perf
 These linked service types are needed for the following steps:
 
 `Azure Function` (Cosmos to ADLS) – Linked service associated with exporting Cosmos DB data to ADLS. This will be used for the following steps:
-* Copy ADLS files to Cosmos (Azure Function activity)
+* Copy ADLS Data to Cosmos (Azure Function activity)
 
 `Azure Data Lake Storage Gen2` (staging) – Linked service associated with the ADLS account used for staging Cosmos DB data. This will be used for the following steps:
-* For dcsazure_Cosmos_NoSQL_ADLS_delimited_filter_test_utility_df/Source (dataFlow)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_filter_test_utility_df/Sink (dataFlow)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_container_and_directory_mask_ds (DelimitedText dataset)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_unfiltered_mask_df/Source (dataFlow)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_unfiltered_mask_df/Sink (dataFlow)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_filtered_mask_df/Source (dataFlow)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_filtered_mask_df/Sink (dataFlow)
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_copy_df/Source (dataFlow)
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_filter_test_utility_df/Source (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_filter_test_utility_df/Sink (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_container_and_directory_mask_ds (DelimitedText dataset),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_unfiltered_mask_df/Source (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_unfiltered_mask_df/Sink (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_filtered_mask_df/Source (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_filtered_mask_df/Sink (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_copy_df/Source (dataFlow),
 * dcsazure_Cosmos_NoSQL_ADLS_delimited_copy_df/Sink (dataFlow)
 
 `Azure SQL` (metadata) – Linked service associated with your hosted metadata store. This will be used for the following steps:
-* Check For Conditional Masking (If Condition activity)
-* Check For Conditional Masking (If Condition activity)
-* Check For Conditional Masking (If Condition activity)
-* Check For Conditional Masking (If Condition activity)
-* If Copy Via Dataflow (If Condition activity)
-* If Copy Via Dataflow (If Condition activity)
-* If Copy Via Dataflow (If Condition activity)
-* If Copy Via Dataflow (If Condition activity)
-* Check If We Should Reapply Mapping (If Condition activity)
-* Configure Masked Status (Script activity)
+* Check ADLS to Cosmos Status (If Condition activity),
+* Update Copy ADLS Data to Cosmos State (Stored procedure activity),
+* Update Copy ADLS Data to Cosmos State Fail (Stored procedure activity),
+* Check For Conditional Masking (If Condition activity),
+* Check For Conditional Masking (If Condition activity),
+* Check For Conditional Masking (If Condition activity),
+* Check For Conditional Masking (If Condition activity),
+* If Copy Via Dataflow (If Condition activity),
+* If Copy Via Dataflow (If Condition activity),
+* If Copy Via Dataflow (If Condition activity),
+* If Copy Via Dataflow (If Condition activity),
+* Check If We Should Reapply Mapping (If Condition activity),
+* Configure Masked Status (Script activity),
 * dcsazure_Cosmos_NoSQL_ADLS_delimited_metadata_mask_ds (Azure SQL Database dataset)
 
 `REST` (DCS for Azure) – Linked service associated with calling DCS for Azure. This will be used for the following steps:
-* dcsazure_Cosmos_NoSQL_ADLS_delimited_mask_df (dataFlow)
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_unfiltered_mask_df (dataFlow),
+* dcsazure_Cosmos_NoSQL_ADLS_delimited_filtered_mask_df (dataFlow)
 
 ### How It Works
 
@@ -74,11 +79,11 @@ These linked service types are needed for the following steps:
           * Call the dcsazure_ADLS_to_ADLS_delimited_filterd_mask_df data flow, passing in parameters as generated by the Lookup Masking Parameters activity and the filter as determined by the output of For Each Table To Mask
           * Update the mapped status based on the success of this dataflow, and fail accordingly
   * Note that there is a deactivated activity Test Filter Conditions that exists in order to support importing the filter test utility dataflow, this is making it easier to test writing filter conditions leveraging a dataflow debug session
-* Cosmos to ADLS
-  * Export documents from the Cosmos DB container to ADLS using an Azure Function
-* Until Cosmos to ADLS Durable Function is Success
+* Copy ADLS Data to Cosmos
+  * Export documents from ADLS to Cosmos DB container using an Azure Function
+* Until ADLS to Cosmos Durable Function is Success
   * Poll the Azure Function execution status until the export completes
-* Check Cosmos to ADLS Status
+* Check ADLS to Cosmos Status
   * Validate that the export completed successfully, otherwise fail the pipeline
 
 ### Variables
@@ -97,6 +102,8 @@ have customized your metadata store, then these variables may need editing.
 * `METADATA_MASKING_PARAMS_PROCEDURE_NAME` – Stored procedure used to generate Cosmos NoSQL masking parameters (default `generate_cosmos_no_sql_masking_parameters`)
 * `COLUMN_WIDTH_ESTIMATE` – Estimated column width used for batch size calculation when schema width is unavailable (default `1000`)
 * `STORAGE_ACCOUNT` – Azure Data Lake Storage account name used for staging masked data
+* `COSMOS_TO_ADLS_BATCH_SIZE` - This is the number of rows per batch while copying the data from Cosmos NoSQL database to ADLS (default `50000`)
+* `AZURE_FUNCTION_STATUS_INTERVAL` - Number of seconds to wait before checking the status of `Copy Cosmos Data to ADLS` Azure Function activity(default `30`)
 
 ### Parameters
 
@@ -113,3 +120,29 @@ have customized your metadata store, then these variables may need editing.
 * `P_COPY_USE_DATAFLOW` – Bool – Use dataflow instead of copy activity when copying data (default `false`)
 * `P_TRUNCATE_SINK_BEFORE_WRITE` – Bool – Truncate target Cosmos container before writing masked data (default `true`)
 * `P_REAPPLY_MAPPING` – Bool – Reapply source-to-sink mapping before masking (default `true`)
+
+### Notes
+
+* When creating the Azure Function used for Cosmos DB export, choose the hosting plan based on data volume:
+  * The default timeout for the Consumption plan is 10 minutes.
+  * The default timeout for the Flex Consumption plan is 60 minutes.
+  * For containers with millions of documents, it is recommended to use an App Service plan with at least 4 GB of memory.
+    * This allows the function to run without time limits until all records are processed.
+    * This approach is especially recommended when the target container has low RU provisioning or a very large number of records.
+* If the Azure Function fails with out-of-memory errors (exit code 137), adjust the `COSMOS_TO_ADLS_BATCH_SIZE` to reduce memory pressure.
+* The `source_metadata` column in the `discovered_ruleset` table can be used to determine which partition data is currently staged in ADLS prior to running the masking pipeline. For example:
+  ```sql
+  SELECT
+      d.dataset,
+      d.specified_database,
+      d.specified_schema,
+      d.identified_table,
+      d.identified_column,
+      pv.value AS partition_value
+  FROM <METADATA_SCHEMA>.<METADATA_RULESET_TABLE> d
+  CROSS APPLY OPENJSON(d.source_metadata, '$.partition_values') pv
+  WHERE d.dataset = 'COSMOS_NOSQL'
+    AND d.specified_schema LIKE 'COSMOS-DATABASE/COSMOS-CONTAINER-NAME%';
+* The Cosmos container name must be the same in both the source and sink databases for the masking pipeline to function correctly.
+* Ensure that all schemas associated with the Cosmos DB container are added to the `adf_data_mapping` table before triggering the masking pipeline.
+* If a column exists in some records but is missing in others, the pipeline will still include that column in the masked output, populating `null` values for records where the column was not originally present.
