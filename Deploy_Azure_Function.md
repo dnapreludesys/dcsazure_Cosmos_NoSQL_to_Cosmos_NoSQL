@@ -5,13 +5,6 @@ This document describes the standard process for deploying an Azure Function App
 
 ---
 
-## Prerequisites
-- Azure CLI installed on the local machine
-- Access to an Azure subscription with permission to deploy Azure Function Apps
-- A ZIP file containing the Azure Function App code and configuration
-
----
-
 ## Login to Azure Using Azure CLI
 
 1. Open **Command Prompt** or **PowerShell** on your local machine.
@@ -32,23 +25,23 @@ This document describes the standard process for deploying an Azure Function App
       --resource-group <RESOURCE_GROUP_NAME> \
       --name <FUNCTION_APP_NAME> \
       --src "<FULL_PATH_TO_ZIP_FILE>"
-
 1. Parameters
 
-* `resource-group` : Name of the Azure resource group
-* `name` : Name of the Azure Function App
-* `src` : Full path to the ZIP file containing the function app code
+   * `resource-group` : Name of the Azure resource group
+   * `name` : Name of the Azure Function App
+   * `src` : Full path to the ZIP file containing the function app code
     
 ## Deployment Result
 
 1. If the deployment is successful, Azure CLI returns a response similar to the following:
 
-* Deployment status: Succeeded
-* Deployment message: Created via a push deployment
-* Application mode: Run-from-package (read-only)
+   * Deployment status: Succeeded
+   * Deployment message: Created via a push deployment
+   * Application mode: Run-from-package (read-only)
 
 1. This confirms that the ZIP package has been uploaded successfully and mounted by the Function App.
 
 ## Notes
 
-1. Azure Cloud Shell does not support ZIP deployment for Azure Function Apps due to authentication and file system limitations.
+
+* Azure Cloud Shell does not support ZIP deployment for Azure Function Apps due to authentication and file system limitations.
