@@ -6,10 +6,10 @@
             "type": "string",
             "metadata": "Data Factory name"
         },
-        "Cosmos NoSQL Source to ADLS Source": {
+        "Metadata Datastore": {
             "type": "string"
         },
-        "Metadata Datastore": {
+        "Cosmos NoSQL Source to ADLS Source": {
             "type": "string"
         },
         "ADLS_GEN2_LS": {
@@ -30,38 +30,11 @@
             "properties": {
                 "activities": [
                     {
-                        "name": "Copy Cosmos Data to ADLS",
-                        "description": "Copy Data from Cosmos DB to ADLS source as '|' separated csv files ",
-                        "type": "AzureFunctionActivity",
-                        "dependsOn": [],
-                        "policy": {
-                            "timeout": "0.12:00:00",
-                            "retry": 0,
-                            "retryIntervalInSeconds": 30,
-                            "secureOutput": false,
-                            "secureInput": false
-                        },
-                        "userProperties": [],
-                        "typeProperties": {
-                            "functionName": "Cosmos_to_ADLS_V1",
-                            "body": {
-                                "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_key\": \"@{json(string(pipeline().parameters.P_COSMOS_SOURCE_KEY)).value}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_account_key\": \"@{json(string(pipeline().parameters.P_ADLS_KEY)).value}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"batch_size\" : @{variables('COSMOS_TO_ADLS_BATCH_SIZE')}\n}",
-                                "type": "Expression"
-                            },
-                            "headers": {},
-                            "method": "POST"
-                        },
-                        "linkedServiceName": {
-                            "referenceName": "[parameters('Cosmos NoSQL Source to ADLS Source')]",
-                            "type": "LinkedServiceReference"
-                        }
-                    },
-                    {
                         "name": "Discover Sensitive Data",
                         "type": "ExecutePipeline",
                         "dependsOn": [
                             {
-                                "activity": "Check Cosmos to ADLS Status",
+                                "activity": "Check Cosmos To ADLS Status",
                                 "dependencyConditions": [
                                     "Succeeded"
                                 ]
@@ -176,11 +149,11 @@
                         }
                     },
                     {
-                        "name": "Until Cosmos to ADLS Duraable Function is Success",
-                        "type": "Until",
+                        "name": "Check Cosmos To ADLS Status",
+                        "type": "IfCondition",
                         "dependsOn": [
                             {
-                                "activity": "Copy Cosmos Data to ADLS",
+                                "activity": "Until Cosmos To ADLS Duraable Function Is Success",
                                 "dependencyConditions": [
                                     "Succeeded"
                                 ]
@@ -189,21 +162,37 @@
                         "userProperties": [],
                         "typeProperties": {
                             "expression": {
-                                "value": "@contains(createArray('Completed','Failed','Cancelled','Terminated','Suspended'),activity('Cosmos to ADLS Status').output.runtimeStatus)",
+                                "value": "@if(\n    equals(pipeline().parameters.P_COPY_COSMOS_DATA_TO_ADLS, true),\n    equals(activity('Cosmos To ADLS Status').output.output.status, 'success'),\n    true\n)",
                                 "type": "Expression"
                             },
-                            "activities": [
+                            "ifFalseActivities": [
                                 {
-                                    "name": "Cosmos to ADLS Status",
-                                    "type": "WebActivity",
+                                    "name": "Cosmos to ADLS Fail",
+                                    "type": "Fail",
                                     "dependsOn": [
                                         {
-                                            "activity": "Wait Before Next Cosmos to ADLS Status Check",
+                                            "activity": "Update Copy Cosmos Data To ADLS State Failed",
                                             "dependencyConditions": [
                                                 "Succeeded"
                                             ]
                                         }
                                     ],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "message": {
+                                            "value": "@activity('Cosmos To ADLS Status').output.output.message",
+                                            "type": "Expression"
+                                        },
+                                        "errorCode": {
+                                            "value": "@activity('Cosmos To ADLS Status').output.output.status",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "Update Copy Cosmos Data To ADLS State Failed",
+                                    "type": "SqlServerStoredProcedure",
+                                    "dependsOn": [],
                                     "policy": {
                                         "timeout": "0.12:00:00",
                                         "retry": 0,
@@ -213,36 +202,112 @@
                                     },
                                     "userProperties": [],
                                     "typeProperties": {
-                                        "method": "GET",
-                                        "headers": {},
-                                        "url": {
-                                            "value": "@activity('Copy Cosmos Data to ADLS').output.statusQueryGetUri",
+                                        "storedProcedureName": {
+                                            "value": "@{variables('METADATA_SCHEMA')}.@{variables('METADATA_EVENT_PROCEDURE_NAME')}",
                                             "type": "Expression"
+                                        },
+                                        "storedProcedureParameters": {
+                                            "activity_run_id": {
+                                                "value": {
+                                                    "value": "@activity('Copy Cosmos Data To ADLS').ActivityRunId",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "Guid"
+                                            },
+                                            "error_message": {
+                                                "value": {
+                                                    "value": "@activity('Cosmos To ADLS Status').output.output.message",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "execution_end_time": {
+                                                "value": {
+                                                    "value": "@activity('Until Cosmos To ADLS Duraable Function Is Success').ExecutionEndTime",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "DateTimeOffset"
+                                            },
+                                            "execution_start_time": {
+                                                "value": {
+                                                    "value": "@activity('Copy Cosmos Data To ADLS').ExecutionStartTime",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "DateTimeOffset"
+                                            },
+                                            "input_parameters": {
+                                                "value": {
+                                                    "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"batch_size\" : @{variables('COSMOS_TO_ADLS_BATCH_SIZE')}\n}",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "pipeline_name": {
+                                                "value": {
+                                                    "value": "@pipeline().Pipeline",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "pipeline_run_id": {
+                                                "value": {
+                                                    "value": "@pipeline().RunId",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "Guid"
+                                            },
+                                            "pipeline_success": {
+                                                "value": "false",
+                                                "type": "Boolean"
+                                            },
+                                            "source_database": {
+                                                "value": {
+                                                    "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "source_dataset": {
+                                                "value": {
+                                                    "value": "@variables('DATASET')",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "source_metadata": {
+                                                "value": null,
+                                                "type": "String"
+                                            },
+                                            "source_schema": {
+                                                "value": {
+                                                    "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "source_table": {
+                                                "value": {
+                                                    "value": "@pipeline().parameters.P_COSMOS_SOURCE_CONTAINER",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            }
                                         }
-                                    }
-                                },
-                                {
-                                    "name": "Wait Before Next Cosmos to ADLS Status Check",
-                                    "type": "Wait",
-                                    "dependsOn": [],
-                                    "userProperties": [],
-                                    "typeProperties": {
-                                        "waitTimeInSeconds": {
-                                            "value": "@variables('AZURE_FUNCTION_STATUS_INTERVAL')",
-                                            "type": "Expression"
-                                        }
+                                    },
+                                    "linkedServiceName": {
+                                        "referenceName": "[parameters('Metadata Datastore')]",
+                                        "type": "LinkedServiceReference"
                                     }
                                 }
-                            ],
-                            "timeout": "0.12:00:00"
+                            ]
                         }
                     },
                     {
-                        "name": "Check Cosmos to ADLS Status",
-                        "type": "IfCondition",
+                        "name": "Until Cosmos To ADLS Duraable Function Is Success",
+                        "type": "Until",
                         "dependsOn": [
                             {
-                                "activity": "Until Cosmos to ADLS Duraable Function is Success",
+                                "activity": "Check If We Should Copy Data To ADLS",
                                 "dependencyConditions": [
                                     "Succeeded"
                                 ]
@@ -251,258 +316,216 @@
                         "userProperties": [],
                         "typeProperties": {
                             "expression": {
-                                "value": "@equals(activity('Cosmos to ADLS Status').output.output.status,'success')",
+                                "value": "@if(\n    equals(pipeline().parameters.P_COPY_COSMOS_DATA_TO_ADLS, true),\n    contains(createArray('Completed','Failed','Cancelled','Terminated','Suspended'), activity('Cosmos To ADLS Status').output.runtimeStatus),\n    true\n)",
                                 "type": "Expression"
                             },
-                            "ifFalseActivities": [
+                            "activities": [
                                 {
-                                    "name": "Cosmos to ADLS Fail",
-                                    "type": "Fail",
+                                    "name": "Poll Only If Copy Data To ADLS Is True",
+                                    "type": "IfCondition",
                                     "dependsOn": [],
                                     "userProperties": [],
                                     "typeProperties": {
-                                        "message": {
-                                            "value": "@activity('Cosmos to ADLS Status').output.output.message",
+                                        "expression": {
+                                            "value": "@pipeline().parameters.P_COPY_COSMOS_DATA_TO_ADLS",
                                             "type": "Expression"
                                         },
-                                        "errorCode": {
-                                            "value": "@activity('Cosmos to ADLS Status').output.output.status",
+                                        "ifTrueActivities": [
+                                            {
+                                                "name": "Cosmos To ADLS Status",
+                                                "type": "WebActivity",
+                                                "dependsOn": [],
+                                                "policy": {
+                                                    "timeout": "0.12:00:00",
+                                                    "retry": 0,
+                                                    "retryIntervalInSeconds": 30,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "method": "GET",
+                                                    "headers": {},
+                                                    "url": {
+                                                        "value": "@activity('Copy Cosmos Data To ADLS').output.statusQueryGetUri",
+                                                        "type": "Expression"
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ],
+                            "timeout": "0.12:00:00"
+                        }
+                    },
+                    {
+                        "name": "Check If We Should Copy Data To ADLS",
+                        "type": "IfCondition",
+                        "dependsOn": [],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "expression": {
+                                "value": "@pipeline().parameters.P_COPY_COSMOS_DATA_TO_ADLS",
+                                "type": "Expression"
+                            },
+                            "ifTrueActivities": [
+                                {
+                                    "name": "Copy Cosmos Data To ADLS",
+                                    "description": "Copy Data from Cosmos DB to ADLS source as '|' separated csv files ",
+                                    "type": "AzureFunctionActivity",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "timeout": "0.12:00:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "functionName": "Cosmos_to_ADLS_V1",
+                                        "body": {
+                                            "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"key_vault_name\": \"@{variables('COSMOS_KEY_VAULT_NAME')}\",\n    \"cosmos_secret_name\": \"@{variables('COSMOS_SECRET_NAME')}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"batch_size\" : @{variables('COSMOS_TO_ADLS_BATCH_SIZE')}\n}",
                                             "type": "Expression"
-                                        }
+                                        },
+                                        "headers": {},
+                                        "method": "POST"
+                                    },
+                                    "linkedServiceName": {
+                                        "referenceName": "[parameters('Cosmos NoSQL Source to ADLS Source')]",
+                                        "type": "LinkedServiceReference"
                                     }
                                 }
                             ]
                         }
                     },
                     {
-                        "name": "Update Copy Cosmos Data to ADLS State",
-                        "type": "SqlServerStoredProcedure",
+                        "name": "Check If We Should Update Copy State",
+                        "type": "IfCondition",
                         "dependsOn": [
                             {
-                                "activity": "Check Cosmos to ADLS Status",
+                                "activity": "Check Cosmos To ADLS Status",
                                 "dependencyConditions": [
                                     "Succeeded"
                                 ]
                             }
                         ],
-                        "policy": {
-                            "timeout": "0.12:00:00",
-                            "retry": 0,
-                            "retryIntervalInSeconds": 30,
-                            "secureOutput": false,
-                            "secureInput": false
-                        },
                         "userProperties": [],
                         "typeProperties": {
-                            "storedProcedureName": {
-                                "value": "@{variables('METADATA_SCHEMA')}.@{variables('METADATA_EVENT_PROCEDURE_NAME')}",
+                            "expression": {
+                                "value": "@pipeline().parameters.P_COPY_COSMOS_DATA_TO_ADLS",
                                 "type": "Expression"
                             },
-                            "storedProcedureParameters": {
-                                "activity_run_id": {
-                                    "value": {
-                                        "value": "@activity('Copy Cosmos Data to ADLS').ActivityRunId",
-                                        "type": "Expression"
+                            "ifTrueActivities": [
+                                {
+                                    "name": "Update Copy Cosmos Data To ADLS State",
+                                    "type": "SqlServerStoredProcedure",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "timeout": "0.12:00:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
                                     },
-                                    "type": "Guid"
-                                },
-                                "error_message": {
-                                    "value": null,
-                                    "type": "String"
-                                },
-                                "execution_end_time": {
-                                    "value": {
-                                        "value": "@activity('Check Cosmos to ADLS Status').ExecutionEndTime",
-                                        "type": "Expression"
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "storedProcedureName": {
+                                            "value": "@{variables('METADATA_SCHEMA')}.@{variables('METADATA_EVENT_PROCEDURE_NAME')}",
+                                            "type": "Expression"
+                                        },
+                                        "storedProcedureParameters": {
+                                            "activity_run_id": {
+                                                "value": {
+                                                    "value": "@activity('Copy Cosmos Data To ADLS').ActivityRunId",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "Guid"
+                                            },
+                                            "error_message": {
+                                                "value": null,
+                                                "type": "String"
+                                            },
+                                            "execution_end_time": {
+                                                "value": {
+                                                    "value": "@activity('Check Cosmos To ADLS Status').ExecutionEndTime",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "DateTimeOffset"
+                                            },
+                                            "execution_start_time": {
+                                                "value": {
+                                                    "value": "@activity('Copy Cosmos Data To ADLS').ExecutionStartTime",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "DateTimeOffset"
+                                            },
+                                            "input_parameters": {
+                                                "value": {
+                                                    "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"batch_size\" : @{variables('COSMOS_TO_ADLS_BATCH_SIZE')}\n}",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "pipeline_name": {
+                                                "value": {
+                                                    "value": "@pipeline().Pipeline",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "pipeline_run_id": {
+                                                "value": {
+                                                    "value": "@pipeline().RunId",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "Guid"
+                                            },
+                                            "pipeline_success": {
+                                                "value": "true",
+                                                "type": "Boolean"
+                                            },
+                                            "source_database": {
+                                                "value": {
+                                                    "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "source_dataset": {
+                                                "value": {
+                                                    "value": "@variables('DATASET')",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "source_metadata": {
+                                                "value": null,
+                                                "type": "String"
+                                            },
+                                            "source_schema": {
+                                                "value": {
+                                                    "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            },
+                                            "source_table": {
+                                                "value": {
+                                                    "value": "@pipeline().parameters.P_COSMOS_SOURCE_CONTAINER",
+                                                    "type": "Expression"
+                                                },
+                                                "type": "String"
+                                            }
+                                        }
                                     },
-                                    "type": "DateTimeOffset"
-                                },
-                                "execution_start_time": {
-                                    "value": {
-                                        "value": "@activity('Copy Cosmos Data to ADLS').ExecutionStartTime",
-                                        "type": "Expression"
-                                    },
-                                    "type": "DateTimeOffset"
-                                },
-                                "input_parameters": {
-                                    "value": {
-                                        "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"batch_size\" : @{variables('COSMOS_TO_ADLS_BATCH_SIZE')}\n}",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "pipeline_name": {
-                                    "value": {
-                                        "value": "@pipeline().Pipeline",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "pipeline_run_id": {
-                                    "value": {
-                                        "value": "@pipeline().RunId",
-                                        "type": "Expression"
-                                    },
-                                    "type": "Guid"
-                                },
-                                "pipeline_success": {
-                                    "value": "true",
-                                    "type": "Boolean"
-                                },
-                                "source_database": {
-                                    "value": {
-                                        "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "source_dataset": {
-                                    "value": {
-                                        "value": "@variables('DATASET')",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "source_metadata": {
-                                    "value": null,
-                                    "type": "String"
-                                },
-                                "source_schema": {
-                                    "value": {
-                                        "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "source_table": {
-                                    "value": {
-                                        "value": "@pipeline().parameters.P_COSMOS_SOURCE_CONTAINER",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
+                                    "linkedServiceName": {
+                                        "referenceName": "[parameters('Metadata Datastore')]",
+                                        "type": "LinkedServiceReference"
+                                    }
                                 }
-                            }
-                        },
-                        "linkedServiceName": {
-                            "referenceName": "[parameters('Metadata Datastore')]",
-                            "type": "LinkedServiceReference"
-                        }
-                    },
-                    {
-                        "name": "Update Copy Cosmos Data to ADLS State Failed",
-                        "type": "SqlServerStoredProcedure",
-                        "dependsOn": [
-                            {
-                                "activity": "Check Cosmos to ADLS Status",
-                                "dependencyConditions": [
-                                    "Failed"
-                                ]
-                            }
-                        ],
-                        "policy": {
-                            "timeout": "0.12:00:00",
-                            "retry": 0,
-                            "retryIntervalInSeconds": 30,
-                            "secureOutput": false,
-                            "secureInput": false
-                        },
-                        "userProperties": [],
-                        "typeProperties": {
-                            "storedProcedureName": {
-                                "value": "@{variables('METADATA_SCHEMA')}.@{variables('METADATA_EVENT_PROCEDURE_NAME')}",
-                                "type": "Expression"
-                            },
-                            "storedProcedureParameters": {
-                                "activity_run_id": {
-                                    "value": {
-                                        "value": "@activity('Copy Cosmos Data to ADLS').ActivityRunId",
-                                        "type": "Expression"
-                                    },
-                                    "type": "Guid"
-                                },
-                                "error_message": {
-                                    "value": {
-                                        "value": "@activity('Cosmos to ADLS Status').output.output.message",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "execution_end_time": {
-                                    "value": {
-                                        "value": "@activity('Check Cosmos to ADLS Status').ExecutionEndTime",
-                                        "type": "Expression"
-                                    },
-                                    "type": "DateTimeOffset"
-                                },
-                                "execution_start_time": {
-                                    "value": {
-                                        "value": "@activity('Copy Cosmos Data to ADLS').ExecutionStartTime",
-                                        "type": "Expression"
-                                    },
-                                    "type": "DateTimeOffset"
-                                },
-                                "input_parameters": {
-                                    "value": {
-                                        "value": "{\n    \"cosmos_url\": \"@{pipeline().parameters.P_COSMOS_SOURCE_ENDPOINT}\",\n    \"cosmos_db\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"cosmos_container\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"partition_key_path\": \"@{pipeline().parameters.P_LOGICAL_PARTITION_KEY}\",\n    \"partition_key_value\": @{if(empty(pipeline().parameters.P_LOGICAL_PARTITION_ID),'null',pipeline().parameters.P_LOGICAL_PARTITION_ID)},\n    \"adls_account_name\": \"@{variables('STORAGE_ACCOUNT')}\",\n    \"adls_file_system\": \"@{pipeline().parameters.P_ADLS_CONTAINER_NAME}\",\n    \"adls_directory\": \"@{pipeline().parameters.P_COSMOS_SOURCE_DATABASE}\",\n    \"adls_file_prefix\": \"@{pipeline().parameters.P_COSMOS_SOURCE_CONTAINER}\",\n    \"batch_size\" : @{variables('COSMOS_TO_ADLS_BATCH_SIZE')}\n}",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "pipeline_name": {
-                                    "value": {
-                                        "value": "@pipeline().Pipeline",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "pipeline_run_id": {
-                                    "value": {
-                                        "value": "@pipeline().RunId",
-                                        "type": "Expression"
-                                    },
-                                    "type": "Guid"
-                                },
-                                "pipeline_success": {
-                                    "value": "false",
-                                    "type": "Boolean"
-                                },
-                                "source_database": {
-                                    "value": {
-                                        "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "source_dataset": {
-                                    "value": {
-                                        "value": "@variables('DATASET')",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "source_metadata": {
-                                    "value": null,
-                                    "type": "String"
-                                },
-                                "source_schema": {
-                                    "value": {
-                                        "value": "@pipeline().parameters.P_COSMOS_SOURCE_DATABASE",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                },
-                                "source_table": {
-                                    "value": {
-                                        "value": "@pipeline().parameters.P_COSMOS_SOURCE_CONTAINER",
-                                        "type": "Expression"
-                                    },
-                                    "type": "String"
-                                }
-                            }
-                        },
-                        "linkedServiceName": {
-                            "referenceName": "[parameters('Metadata Datastore')]",
-                            "type": "LinkedServiceReference"
+                            ]
                         }
                     }
                 ],
@@ -516,9 +539,6 @@
                     "P_COSMOS_SOURCE_ENDPOINT": {
                         "type": "string"
                     },
-                    "P_COSMOS_SOURCE_KEY": {
-                        "type": "securestring"
-                    },
                     "P_COSMOS_SOURCE_DATABASE": {
                         "type": "string"
                     },
@@ -528,13 +548,14 @@
                     "P_LOGICAL_PARTITION_ID": {
                         "type": "array"
                     },
-                    "P_ADLS_KEY": {
-                        "type": "securestring"
-                    },
                     "P_ADLS_CONTAINER_NAME": {
                         "type": "string"
                     },
                     "P_REDISCOVER": {
+                        "type": "bool",
+                        "defaultValue": true
+                    },
+                    "P_COPY_COSMOS_DATA_TO_ADLS": {
                         "type": "bool",
                         "defaultValue": true
                     }
@@ -575,16 +596,18 @@
                         "type": "Integer",
                         "defaultValue": 50000
                     },
-                    "AZURE_FUNCTION_STATUS_INTERVAL": {
-                        "type": "Integer",
-                        "defaultValue": 30
+                    "COSMOS_KEY_VAULT_NAME": {
+                        "type": "String"
+                    },
+                    "COSMOS_SECRET_NAME": {
+                        "type": "String"
                     }
                 },
                 "folder": {
                     "name": "dcsazure_Cosmos_NoSQL_to_Cosmos_NoSQL"
                 },
                 "annotations": [],
-                "lastPublishTime": "2026-01-13T15:16:48Z"
+                "lastPublishTime": "2026-01-27T12:49:57Z"
             },
             "dependsOn": [
                 "[concat(variables('factoryId'), '/pipelines/dcsazure_Cosmos_NoSQL_ADLS_delimited_discovery_pl')]"
