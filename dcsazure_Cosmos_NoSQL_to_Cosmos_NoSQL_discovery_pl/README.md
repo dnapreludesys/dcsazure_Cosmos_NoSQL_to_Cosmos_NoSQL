@@ -9,7 +9,9 @@ This pipeline will perform automated sensitive data discovery on your Azure Cosm
 1. Configure the DCS for Azure REST service.
 1. Configure the Azure Data Lake Storage (Gen 2) service for staging exported Cosmos DB data.
 1. [Assign a managed identity with a storage blob data contributor role for the Data Factory instance within the storage account](https://help.delphix.com/dcs/current/Content/DCSDocs/Configure_ADLS_delimited_pipelines.htm).
+1. [Repeat the above step for the Azure Function by assigning a managed identity with the Storage Blob Data Contributor role](External_Document_URL).
 1. [Configure an Azure Function for exporting Cosmos DB data to Azure Data Lake Storage (ADLS)](External_Document_URL) (version `Cosmos_to_ADLS_V1`).
+1. [Configure an Azure Key Vault for storing the Cosmos DB access key and assign a managed identity with the Key Vault Secrets User role to the Azure Function](External_Document_URL).
 
 ### Importing
 There are several linked services that will need to be selected in order to perform the profiling and data discovery of your Cosmos NoSQL containers.
@@ -17,7 +19,7 @@ There are several linked services that will need to be selected in order to perf
 These linked service types are needed for the following steps:
 
 `Azure Function` (Cosmos to ADLS) - Linked service associated with exporting Cosmos DB data to ADLS. This will be used for the following steps:
-* Copy Cosmos Data to ADLS (Azure Function activity)
+* Check If We Should Copy Data To ADLS (If Condition activity)
 
 `Azure Data Lake Storage Gen2` (staging) - Linked service associated with the ADLS account used for staging Cosmos DB exports. This will be used for the following steps:
 * dcsazure_Cosmos_NoSQL_ADLS_delimited_container_and_directory_discovery_ds (DelimitedText dataset),
@@ -26,8 +28,8 @@ These linked service types are needed for the following steps:
 
 `Azure SQL` (metadata) - Linked service associated with your hosted metadata store. This will be used for the following steps:
 * Set Source Metadata (Script activity),
-* Update Copy Cosmos Data to ADLS State (Stored procedure activity),
-* Update Copy Cosmos Data to ADLS State Failed (Stored procedure activity),
+* Check Cosmos To ADLS Status (If Condition activity),
+* Check If We Should Update Copy State (If Condition activity),
 * Update Discovery State (Stored procedure activity),
 * Update Discovery State Failed (Stored procedure activity),
 * Check If We Should Rediscover Data (If Condition activity),
@@ -41,8 +43,9 @@ These linked service types are needed for the following steps:
 
 ### How It Works
 
-* Copy Cosmos Data to ADLS
-  * Export documents from a Cosmos DB container to ADLS using an Azure Function
+* Check If We Should Copy Data To ADLS
+  * Copy Cosmos Data to ADLS
+    * Export documents from a Cosmos DB container to ADLS using an Azure Function
 * Until Cosmos to ADLS Durable Function is Success
   * Poll the Azure Function execution status until the export completes
 * Check Cosmos to ADLS Status
@@ -77,20 +80,20 @@ If you have configured your database using the metadata store scripts, these var
 * `STORAGE_ACCOUNT` - Azure Data Lake Storage account name
 * `MAX_LEVELS_TO_RECURSE` - Maximum directory recursion depth (default `10`)
 * `COSMOS_TO_ADLS_BATCH_SIZE` - This is the number of rows per batch while copying the data from Cosmos NoSQL database to ADLS (default `50000`)
-* `AZURE_FUNCTION_STATUS_INTERVAL` - Number of seconds to wait before checking the status of `Copy Cosmos Data to ADLS` Azure Function activity(default `30`)
+* `COSMOS_KEY_VAULT_NAME` – Name of the Azure Key Vault that stores the Cosmos DB access key
+* `COSMOS_SECRET_NAME` – Name of the secret in Key Vault containing the Cosmos DB access key
 
 ### Parameters
 
 * `P_SOURCE_DATABASE` - String - Cosmos DB database name
 * `P_SOURCE_CONTAINER` - String - Cosmos DB container name
 * `P_COSMOS_ENDPOINT` - String - Cosmos DB endpoint URL
-* `P_COSMOS_KEY` - SecureString - Cosmos DB access key
 * `P_LOGICAL_PARTITION_KEY` - String - Logical partition key path
 * `P_LOGICAL_PARTITION_ID` - Array - Optional logical partition values
 * `P_STORAGE_ACCOUNT_NAME` - String - Azure Data Lake Storage account name
 * `P_ADLS_CONTAINER_NAME` - String - Azure Data Lake Storage filesystem / container name
-* `P_ADLS_KEY` - SecureString - Azure Data Lake Storage access key
 * `P_REDISCOVER` - Bool - Specifies if previously discovered data should be rediscovered (default `true`)
+* `P_COPY_COSMOS_DATA_TO_ADLS` – Bool – Specifies whether data should be copied from Cosmos DB to ADLS (default `true`)
 
 ### Notes
 
@@ -101,6 +104,7 @@ If you have configured your database using the metadata store scripts, these var
     * This allows the function to run without time limits until all records are processed.
     * This approach is especially recommended when the target container has low RU provisioning or a very large number of records.
 * If the Azure Function fails with out-of-memory errors (exit code 137), adjust the `COSMOS_TO_ADLS_BATCH_SIZE` to reduce memory pressure.
+* Update the `COSMOS_KEY_VAULT_NAME` and `COSMOS_SECRET_NAME` variables to match the target Cosmos DB account before triggering the pipeline.
 * To filter records by Cosmos DB partition, both `P_LOGICAL_PARTITION_KEY` and `P_LOGICAL_PARTITION_ID` must be provided.
 * This pipeline operates at the container level. When an array of `P_LOGICAL_PARTITION_ID` is specified, only data for those partitions is exported to ADLS and included in discovery and masking.
 * The `source_metadata` column in the `discovered_ruleset` table can be used to identify which partition data is currently staged in ADLS prior to running the masking pipeline. For example:
